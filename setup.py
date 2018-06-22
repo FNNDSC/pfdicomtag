@@ -18,11 +18,11 @@ setup(
       author           =   'FNNDSC',
       author_email     =   'dev@babymri.org',
       url              =   'https://github.com/FNNDSC/med2image',
-      packages         =   ['[pfdicom]'],
+      packages         =   ['[pfdicomtag]'],
       install_requires =   ['pydicom', 'numpy', 'matplotlib', 'pillow', 'pfmisc'],
       #test_suite       =   'nose.collector',
       #tests_require    =   ['nose'],
-      scripts          =   ['bin/pf-dicomanon'],
+      scripts          =   ['bin/pfdicomtag'],
       license          =   'MIT',
       zip_safe         =   False
 )
