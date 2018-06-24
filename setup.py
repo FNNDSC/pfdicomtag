@@ -12,7 +12,7 @@ def readme():
 
 setup(
       name             =   'pfdicomtag',
-      version          =   '0.9.99',
+      version          =   '0.99.99',
       description      =   '(Python) utility to extract meta data from trees of organized DICOM files.',
       long_description =   readme(),
       author           =   'FNNDSC',
