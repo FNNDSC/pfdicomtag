@@ -19,32 +19,76 @@ import      matplotlib.cm       as      cm
 
 # Project specific imports
 import      pfmisc
-import      error              
+from        pfmisc._colors      import  Colors
+import      inspect
 
 import      pudb
 import      hashlib
 
 class pfdicomtag(object):
 
-    _dictErr = {
-        'inputDirFail'   : {
-            'action'        : 'trying to check on the input directory, ',
-            'error'         : 'directory not found. This is a *required* input',
-            'exitCode'      : 1},
-        'imageFileSpecFail'   : {
-            'action'        : 'trying to parse image file specified, ',
-            'error'         : 'wrong format found. Must be [<index>:]<filename>',
-            'exitCode'      : 1},
-        'inputDICOMFileFail'   : {
-            'action'        : 'trying to read input DICOM file, ',
-            'error'         : 'could not access/read file -- does it exist? Do you have permission?',
-            'exitCode'      : 10},
-        'inputTAGLISTFileFail': {
-            'action'        : 'trying to read input <tagFileList>, ',
-            'error'         : 'could not access/read file -- does it exist? Do you have permission?',
-            'exitCode'      : 20
-            }
-    }
+    def report(     self,
+                    astr_key,
+                    ab_exitToOs=1,
+                    astr_header=""
+                    ):
+        '''
+        Error handling.
+
+        Based on the <astr_key>, error information is extracted from
+        _dictErr and sent to log object.
+
+        If <ab_exitToOs> is False, error is considered non-fatal and
+        processing can continue, otherwise processing terminates.
+
+        '''
+        log         = self.log
+        b_syslog    = log.syslog()
+        log.syslog(False)
+        if ab_exitToOs: log( Colors.RED +    "\n:: FATAL ERROR :: " + Colors.NO_COLOUR )
+        else:           log( Colors.YELLOW + "\n::   WARNING   :: " + Colors.NO_COLOUR )
+        if len(astr_header): log( Colors.BROWN + astr_header + Colors.NO_COLOUR )
+        log( "\n" )
+        log( "\tSorry, some error seems to have occurred in:\n\t<" )
+        log( Colors.LIGHT_GREEN + ("%s" % self.name()) + Colors.NO_COLOUR + "::")
+        log( Colors.LIGHT_CYAN + ("%s" % inspect.stack()[2][4][0].strip()) + Colors.NO_COLOUR)
+        log( "> called by <")
+        try:
+            caller = inspect.stack()[3][4][0].strip()
+        except:
+            caller = '__main__'
+        log( Colors.LIGHT_GREEN + ("%s" % self.name()) + Colors.NO_COLOUR + "::")
+        log( Colors.LIGHT_CYAN + ("%s" % caller) + Colors.NO_COLOUR)
+        log( ">\n")
+        log( "\tWhile %s\n" % self._dictErr[astr_key]['action'] )
+        log( "\t%s\n" % self._dictErr[astr_key]['error'] )
+        log( "\n" )
+        if ab_exitToOs:
+            log( "Returning to system with error code %d\n" % \
+                            self._dictErr[astr_key]['exitCode'] )
+            sys.exit( self._dictErr[astr_key]['exitCode'] )
+        log.syslog(b_syslog)
+        return self._dictErr[astr_key]['exitCode']
+
+
+    def fatal( self, astr_key, astr_extraMsg="" ):
+        '''
+        Convenience dispatcher to the error_exit() method.
+
+        Will raise "fatal" error, i.e. terminate script.
+        '''
+        b_exitToOS  = True
+        self.report(  astr_key, b_exitToOS, astr_extraMsg )
+
+
+    def warn( self, astr_key, astr_extraMsg="" ):
+        '''
+        Convenience dispatcher to the error_exit() method.
+
+        Will raise "warning" error, i.e. script processing continues.
+        '''
+        b_exitToOS = False
+        self.report( astr_key, b_exitToOS, astr_extraMsg )
 
     def mkdir(self, newdir):
         """
@@ -117,6 +161,26 @@ class pfdicomtag(object):
         """
         A block to declare self variables
         """
+        self._dictErr = {
+            'inputDirFail'   : {
+                'action'        : 'trying to check on the input directory, ',
+                'error'         : 'directory not found. This is a *required* input',
+                'exitCode'      : 1},
+            'imageFileSpecFail'   : {
+                'action'        : 'trying to parse image file specified, ',
+                'error'         : 'wrong format found. Must be [<index>:]<filename>',
+                'exitCode'      : 1},
+            'inputDICOMFileFail'   : {
+                'action'        : 'trying to read input DICOM file, ',
+                'error'         : 'could not access/read file -- does it exist? Do you have permission?',
+                'exitCode'      : 10},
+            'inputTAGLISTFileFail': {
+                'action'        : 'trying to read input <tagFileList>, ',
+                'error'         : 'could not access/read file -- does it exist? Do you have permission?',
+                'exitCode'      : 20
+                }
+            }
+
         #
         # Object desc block
         #
@@ -192,7 +256,7 @@ class pfdicomtag(object):
                 self.str_imageIndex         = l_indexAndFile[0]
             if not b_OK:
                 self.dp.qprint("Invalid image specifier.", comms = 'error')
-                error.fatal(self, 'imageFileSpecFail')
+                self.fatal(self, 'imageFileSpecFail')
             if len(self.str_outputImageFile):
                 self.b_convertToImg         = True
 
@@ -242,7 +306,7 @@ class pfdicomtag(object):
             if not len(self.str_inputDir): self.str_inputDir = '.'
         except:
             self.dp.qprint("input directory not specified.", comms = 'error')
-            error.fatal(self, 'inputDirFail')
+            self.fatal('inputDirFail')
 
 
     def simpleProgress_show(self, index, total):
