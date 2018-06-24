@@ -18,7 +18,7 @@ import  pfmisc
 
 from    pfmisc._colors      import Colors
 
-str_version = "0.99.999"
+str_version = "1.0.0"
 str_desc = Colors.CYAN + """
 
                      
