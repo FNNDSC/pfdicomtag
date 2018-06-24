@@ -12,13 +12,13 @@ def readme():
 
 setup(
       name             =   'pfdicomtag',
-      version          =   '0.9.9',
+      version          =   '0.9.99',
       description      =   '(Python) utility to extract meta data from trees of organized DICOM files.',
       long_description =   readme(),
       author           =   'FNNDSC',
       author_email     =   'dev@babymri.org',
       url              =   'https://github.com/FNNDSC/med2image',
-      packages         =   ['pfdicomtag'],
+      packages         =   ['pfdicomtag', 'error'],
       install_requires =   ['pydicom', 'numpy', 'matplotlib', 'pillow', 'pfmisc'],
       #test_suite       =   'nose.collector',
       #tests_require    =   ['nose'],

@@ -19,7 +19,7 @@ import  error
 
 from    pfmisc._colors      import Colors
 
-str_version = "0.9.9"
+str_version = "0.9.99"
 str_desc = Colors.CYAN + """
 
                      

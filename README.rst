@@ -1,5 +1,5 @@
 pfdicomtag
-=========+
+==========
 
 Quick Overview
 --------------
