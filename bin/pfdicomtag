@@ -15,11 +15,10 @@ from    argparse            import RawTextHelpFormatter
 from    argparse            import ArgumentParser
 import  pudb
 import  pfmisc
-import  error
 
 from    pfmisc._colors      import Colors
 
-str_version = "0.99.99"
+str_version = "0.99.999"
 str_desc = Colors.CYAN + """
 
                      
