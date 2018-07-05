@@ -25,6 +25,224 @@ import      inspect
 import      pudb
 import      hashlib
 
+class pftree(object):
+    """
+    A class that constructs a dictionary represenation of the paths in a filesystem. 
+
+    The "keys" are the paths (relative to some root dir), and the "value" is a list
+    of files in that path.
+
+    Workflow logic:
+
+        * tree_probe()              - return a list of files and dirs down a tree
+        * tree_inputConstruct()     - construct an "input" dictionary:
+                                        -- <keys> are directory path names
+                                        -- <val> list of files in <keys> path
+        * tree_analysisApply        - apply arbitrary analysis on the files in each 
+                                      directory of the "input" tree. Results are usually
+                                      saved to "output" tree, but can in fact 
+                                      be saved to "input" tree instead (if for example 
+                                      some filter operation on the input tree files 
+                                      is required). See the method itself for calling
+                                      syntax and **kwargs behavior.
+
+    The class has "callbacks" to the object that initiated it. This class must provide
+    analysis methods that accept **kwargs and returns a dictionary of results.
+
+
+    """
+
+    def mkdir(self, newdir):
+        """
+        works the way a good mkdir should :)
+            - already exists, silently complete
+            - regular file in the way, raise an exception
+            - parent directory(ies) does not exist, make them as well
+        """
+        if os.path.isdir(newdir):
+            pass
+        elif os.path.isfile(newdir):
+            raise OSError("a file with the same name as the desired " \
+                        "dir, '%s', already exists." % newdir)
+        else:
+            head, tail = os.path.split(newdir)
+            if head and not os.path.isdir(head):
+                self.mkdir(head)
+            if tail:
+                os.mkdir(newdir)
+
+    def declare_selfvars(self):
+        """
+        A block to declare self variables
+        """
+        self._dictErr = {
+            'inputDirFail'   : {
+                'action'        : 'trying to check on the input directory, ',
+                'error'         : 'directory not found. This is a *required* input',
+                'exitCode'      : 1}
+            }
+
+        #
+        # Object desc block
+        #
+        self.str_desc                   = ''
+        self.__name__                   = "pftree"
+
+        # Directory and filenames
+        self.str_workingDir             = ''
+        self.str_inputDir               = ''
+        self.str_inputFile              = ''
+        self.str_fileIndex              = ''
+        self.l_inputDirTree             = []
+        self.str_outputDir              = ''
+        self.d_inputTree                = {}
+        self.d_outputTree               = {}
+
+        # Flags
+        self.b_printToScreen            = False
+
+        self.dp                         = None
+        self.log                        = None
+        self.tic_start                  = 0.0
+        self.pp                         = pprint.PrettyPrinter(indent=4)
+        self.verbosityLevel             = -1
+
+    def __init__(self, **kwargs):
+
+        # pudb.set_trace()
+        self.declare_selfvars()
+
+        for key, value in kwargs.items():
+            if key == "inputDir":           self.str_inputDir           = value
+            if key == "inputFile":          self.str_inputFile          = value
+            if key == "outputDir":          self.str_outputDir          = value
+            if key == 'printToScreen':      self.b_printToScreen        = value
+            if key == 'verbosity':          self.verbosityLevel         = int(value)
+
+        # Set logging
+        self.dp                        = pfmisc.debug(    
+                                            verbosity   = self.verbosityLevel,
+                                            level       = 0,
+                                            within      = self.__name__
+                                            )
+        self.log                       = pfmisc.Message()
+        self.log.syslog(True)
+
+        try:
+            if not len(self.str_inputDir): self.str_inputDir = '.'
+        except:
+            self.dp.qprint("input directory not specified.", comms = 'error')
+
+    def simpleProgress_show(self, index, total):
+        f_percent   = index/total*100
+        str_num     = "[%3d/%3d: %5.2f%%] " % (index, total, f_percent)
+        str_bar     = "*" * int(f_percent)
+        self.dp.qprint("%s%s" % (str_num, str_bar))
+
+    def tree_probe(self, **kwargs):
+        """
+        Perform an os walk down a file system tree, starting from
+        a **kwargs identified 'root', and return lists of files and 
+        directories found.
+
+        kwargs:
+            root    = '/some/path'
+
+        return {
+            'status':   True,
+            'l_dir':    l_dirs,
+            'l_files':  l_files
+        }
+
+        """
+
+        str_topDir  = "."
+        l_dirs      = []
+        l_files     = []
+        b_status    = False
+        str_path    = ''
+        l_dirsHere  = []
+        l_filesHere = []
+
+        for k, v in kwargs.items():
+            if k == 'root':  str_topDir  = v
+
+        for root, dirs, files in os.walk(str_topDir):
+            b_status = True
+            str_path = root.split(os.sep)
+            if dirs:
+                l_dirsHere = [root + '/' + x for x in dirs]
+                l_dirs.append(l_dirsHere)
+                self.dp.qprint('Appending dirs to search space:\n')
+                self.dp.qprint("\n" + self.pp.pformat(l_dirsHere))
+            if files:
+                l_filesHere = [root + '/' + y for y in files]
+                if len(self.str_inputFile):
+                    l_hit = [s for s in l_filesHere if self.str_inputFile in s]
+                    if l_hit: 
+                        l_filesHere = l_hit
+                    else:
+                        l_filesHere = []
+                if l_filesHere:
+                    l_files.append(l_filesHere)
+                self.dp.qprint('Appending files to search space:\n')
+                self.dp.qprint("\n" + self.pp.pformat(l_filesHere))
+        return {
+            'status':   True,
+            'l_dir':    l_dirs,
+            'l_files':  l_files
+        }
+
+    def dirTree_prune(self, **kwargs):
+        """
+        Returns a dictionary of files to process. Dictionary key is
+        the directory basename (relative to <inputDir>), value is
+        the filename to process.
+        """
+        
+        d_prune         = {}
+        l_files         = []
+        b_imageIndexed  = False
+
+        for k, v in kwargs.items():
+            if k == 'filelist':     l_files     = v
+
+        index   = 1
+        total   = len(l_files)
+        for series in l_files:
+            if len(self.str_extension):
+                series = [x for x in series if self.str_extension in x]
+            if self.b_convertToImg:
+                if self.str_imageIndex == 'm':
+                    if len(series):
+                        seriesFile = series[int(len(series)/2)]
+                    b_imageIndexed  = True
+                if self.str_imageIndex == 'f':
+                    seriesFile = series[:-1]
+                    b_imageIndexed  = True
+                if self.str_imageIndex == 'l':
+                    seriesFile = series[0]
+                    b_imageIndexed  = True
+                if not b_imageIndexed:
+                    seriesFile = series[int(self.str_imageIndex)]
+            else:
+                seriesFile  = series[0]
+            str_path = os.path.dirname(seriesFile)
+            str_file = os.path.basename(seriesFile)
+            self.simpleProgress_show(index, total)
+            self.dp.qprint("Pruning path: %s" % str_path)
+            self.dp.qprint("Pruning file: %s" % str_file)
+            d_prune[str_path] = str_file 
+            index += 1
+        
+        return {
+            'status':   True,
+            'd_prune':  d_prune
+        }
+
+
+
+
 class pfdicomtag(object):
 
     def report(     self,
