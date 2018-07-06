@@ -271,6 +271,7 @@ pf_dicomtag       = pfdicomtag.pfdicomtag(
 
 # And now run it!
 pf_dicomtag.tic()
+pudb.set_trace()
 pf_dicomtag.run()
 if args.printElapsedTime: print("Elapsed time = %f seconds" % pf_dicomTag.toc())
 sys.exit(0)

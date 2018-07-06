@@ -35,7 +35,7 @@ class pftree(object):
     Workflow logic:
 
         * tree_probe()              - return a list of files and dirs down a tree
-        * tree_inputConstruct()     - construct an "input" dictionary:
+        * tree_construct()          - construct the "input" and "output" dictionary:
                                         -- <keys> are directory path names
                                         -- <val> list of files in <keys> path
         * tree_analysisApply        - apply arbitrary analysis on the files in each 
@@ -88,18 +88,18 @@ class pftree(object):
         self.str_desc                   = ''
         self.__name__                   = "pftree"
 
+        # Object containing this class
+        self.within                     = None
+
         # Directory and filenames
-        self.str_workingDir             = ''
         self.str_inputDir               = ''
         self.str_inputFile              = ''
-        self.str_fileIndex              = ''
-        self.l_inputDirTree             = []
         self.str_outputDir              = ''
         self.d_inputTree                = {}
         self.d_outputTree               = {}
 
         # Flags
-        self.b_printToScreen            = False
+        self.b_persistAnalysisResults   = False
 
         self.dp                         = None
         self.log                        = None
@@ -113,10 +113,10 @@ class pftree(object):
         self.declare_selfvars()
 
         for key, value in kwargs.items():
+            if key == 'within':             self.within                 = value
             if key == "inputDir":           self.str_inputDir           = value
             if key == "inputFile":          self.str_inputFile          = value
             if key == "outputDir":          self.str_outputDir          = value
-            if key == 'printToScreen':      self.b_printToScreen        = value
             if key == 'verbosity':          self.verbosityLevel         = int(value)
 
         # Set logging
@@ -133,11 +133,14 @@ class pftree(object):
         except:
             self.dp.qprint("input directory not specified.", comms = 'error')
 
-    def simpleProgress_show(self, index, total):
+    def simpleProgress_show(self, index, total, *args):
+        str_pretext = ""
+        if len(args):
+            str_pretext = args[0] + ":"
         f_percent   = index/total*100
         str_num     = "[%3d/%3d: %5.2f%%] " % (index, total, f_percent)
         str_bar     = "*" * int(f_percent)
-        self.dp.qprint("%s%s" % (str_num, str_bar))
+        self.dp.qprint("%s%s%s" % (str_pretext, str_num, str_bar))
 
     def tree_probe(self, **kwargs):
         """
@@ -193,55 +196,159 @@ class pftree(object):
             'l_files':  l_files
         }
 
-    def dirTree_prune(self, **kwargs):
+    def tree_construct(self, *args, **kwargs):
         """
-        Returns a dictionary of files to process. Dictionary key is
-        the directory basename (relative to <inputDir>), value is
-        the filename to process.
+        Processes the <l_files> list of files from the tree_probe()
+        and builds the input/output dictionary structures.
         """
-        
-        d_prune         = {}
-        l_files         = []
-        b_imageIndexed  = False
-
+        l_files = []
         for k, v in kwargs.items():
-            if k == 'filelist':     l_files     = v
-
+            if k == 'l_files':  l_files         = v
         index   = 1
         total   = len(l_files)
-        for series in l_files:
-            if len(self.str_extension):
-                series = [x for x in series if self.str_extension in x]
-            if self.b_convertToImg:
-                if self.str_imageIndex == 'm':
-                    if len(series):
-                        seriesFile = series[int(len(series)/2)]
-                    b_imageIndexed  = True
-                if self.str_imageIndex == 'f':
-                    seriesFile = series[:-1]
-                    b_imageIndexed  = True
-                if self.str_imageIndex == 'l':
-                    seriesFile = series[0]
-                    b_imageIndexed  = True
-                if not b_imageIndexed:
-                    seriesFile = series[int(self.str_imageIndex)]
-            else:
-                seriesFile  = series[0]
-            str_path = os.path.dirname(seriesFile)
-            str_file = os.path.basename(seriesFile)
-            self.simpleProgress_show(index, total)
-            self.dp.qprint("Pruning path: %s" % str_path)
-            self.dp.qprint("Pruning file: %s" % str_file)
-            d_prune[str_path] = str_file 
+        for l_series in l_files:
+            str_path    = os.path.dirname(l_series[0])
+            self.simpleProgress_show(index, total, 'tree_construct')
+            # self.dp.qprint("Creating path:      %s" % str_path)
+            # self.dp.qprint("Adding filelist:    %s" % l_series)
+            self.d_inputTree[str_path]  = l_series
+            self.d_outputTree[str_path] = ""
             index += 1
-        
         return {
-            'status':   True,
-            'd_prune':  d_prune
+            'status':           True,
+            'seriesNumber':     index
         }
 
+    def tree_analysisApply(self, *args, **kwargs):
+        """
 
+        kwargs:
 
+            analysiscallback        = self.fn_filterFileList
+            outputcallback          = self.fn_outputprocess
+            applyResultsTo          = 'inputTree'|'outputTree'
+            applyKey                = <arbitrary key in analysis dictionary>
+            persistAnalysisResults  = True|False
+
+        Loop over all the "paths" in <inputTree> and process the file list
+        contained in each "path", optionally also calling an outputcallback
+        to store results as part of the analysis loop.
+
+        The results of the analysis are typically stored in the corresponding
+        path in the <outputTree> (unless 'persistAnalysisResults' == False); 
+        however, results can also be applied to the <inputTree> (see below).
+
+        The 'self.within' object is called on a method
+
+            self.within.callbackfunc(<list_files>)
+
+        that applies some analysis to the list of files provided to the method.
+        This method must return a dictionary. Typically this dictionary is
+        saved to the <outputTree> at the corresponding path location of the
+        <inputTree>. If 
+
+            kwargs:     applyTo     = 'inputTree'
+
+        is passed, then the results are saved to the <inputTree> instead. 
+        
+        Furthermore, if 
+
+            kwargs:     applyKey    = 'someKey'
+
+        is passed, then only the results of 'someKey' in the returned 
+        dictionary are saved.
+
+        Thus, an enclosing class can call this method to, for example, filter
+        the list of files at each path location by:
+
+            pftree.tree_analysisApply(  
+                        analysiscallback    = self.fn_filterFileList,
+                        applyResultsTo      = 'inputTree',
+                        applyKey            = 'files'
+            )
+
+        will apply the callback function, self.fn_filterFileList and return some
+        filtered list in its return dictionary at key == 'files'. This 
+        dictionary value is stored in the <inputTree>.
+
+        Finally, if either 
+
+            self.b_peristOutputResults  = True
+
+        or 
+
+            kwargs: peristOutputResults = True
+
+        Then this method will save all output results at each location in the
+        <outputTree> path. This can become prohibitively large in memory if
+        operations are applied that seek to save large results at each
+        directory (like dicom anon, for example). In that case, passing/setting
+        a <False> will not save results in the <outputTree> (other than a 
+        boolean status) and will immediately do a callback on the results
+        to process them. In this case, a kwargs
+
+            kwags:  outputcallback      = self.fn_outputcallback
+
+        is called on the dictionary result of the analysiscallback method. The 
+        result of this outputcallback is saved to the <outputTree> instead.
+
+        """
+        str_applyResultsTo          = ""
+        str_applyKey                = ""
+        fn_analysiscallback         = None
+        fn_outputcallback           = None
+        b_persistAnalysisResults    = False
+        d_tree                      = self.d_outputTree
+        for k, v in kwargs.items():
+            if k == 'analysiscallback':         fn_analysiscallback         = v
+            if k == 'outputcallback':           fn_outputcallback           = v
+            if k == 'applyResultsTo':           str_applyResultsTo          = v
+            if k == 'applyKey':                 str_applyKey                = v
+            if k == 'persistAnalysisResults':   b_persistAnalysisResults    = v
+        
+        if str_applyResultsTo == 'inputTree': 
+            d_tree          = self.d_inputTree
+
+        index   = 1
+        total   = len(self.d_inputTree.keys())
+        for path, data in self.d_inputTree.items():
+            self.simpleProgress_show(index, total, fn_analysiscallback.__name__)
+            # self.dp.qprint("Analyzing files in: %s" % path)
+            d_analysis          = fn_analysiscallback(data, **kwargs)
+            if len(str_applyKey):
+                d_tree[path]    = d_analysis[str_applyKey]
+            else:
+                d_tree[path]    = d_analysis
+            if fn_outputcallback:
+                self.simpleProgress_show(index, total, fn_outputcallback.__name__)
+                d_output        = fn_outputcallback(d_analysis, **kwargs)
+            if not b_persistAnalysisResults:
+                d_tree[path]    = d_output
+            index += 1
+        return {
+            'status':   True
+        }
+
+    def tree_analysisOutput(self, *args, **kwargs):
+        """
+        An optional method for looping over the <outputTree> and
+        calling an outputcallback on the analysis results at each
+        path.
+
+        Only call this if self.b_persisAnalysisResults is True.
+        """
+        fn_outputcallback           = None
+        for k, v in kwargs.items():
+            if k == 'outputcallback':           fn_outputcallback           = v
+        index   = 1
+        total   = len(self.d_inputTree.keys())
+        for path, d_analysis in self.d_outputTree.items():
+            self.simpleProgress_show(index, total)
+            self.dp.qprint("Processing analysis results in output: %s" % path)
+            d_output        = fn_outputcallback(d_analysis, **kwargs)
+        return {
+            'status':   True
+        }
 
 class pfdicomtag(object):
 
@@ -575,6 +682,33 @@ class pfdicomtag(object):
             'l_files':  l_files
         }
 
+    def filelist_prune(self, al_file, *args, **kwargs):
+        """
+        Given a list of files, select a single file for further
+        analysis.
+        """
+        if len(self.str_extension):
+            al_file = [x for x in al_file if self.str_extension in x]
+        if self.b_convertToImg:
+            if self.str_imageIndex == 'm':
+                if len(al_file):
+                    seriesFile = al_file[int(len(al_file)/2)]
+                b_imageIndexed  = True
+            if self.str_imageIndex == 'f':
+                seriesFile = al_file[:-1]
+                b_imageIndexed  = True
+            if self.str_imageIndex == 'l':
+                seriesFile = al_file[0]
+                b_imageIndexed  = True
+            if not b_imageIndexed:
+                seriesFile = al_file[int(self.str_imageIndex)]
+        else:
+            seriesFile  = al_file[0]
+        return {
+            'status':   True,
+            'l_file':   [seriesFile]
+        }
+
     def dirTree_prune(self, **kwargs):
         """
         Returns a dictionary of files to process. Dictionary key is
@@ -623,7 +757,7 @@ class pfdicomtag(object):
         }
 
 
-    def tagsFindOnFile(self, **kwargs):
+    def tagsFindOnFile(self, *args, **kwargs):
         """
         Return the tag information for given file.
         """
@@ -643,13 +777,18 @@ class pfdicomtag(object):
         for k, v in kwargs.items():
             if k == 'file':     str_file    = v
 
-        str_localFile      = os.path.basename(str_file)
-        self.str_json      = ''
-        self.str_dict      = ''
-        self.str_col       = ''
-        self.str_raw       = '' 
+        if len(args):
+            l_file          = args[0]
+            str_file        = l_file[0]
+
+        str_localFile       = os.path.basename(str_file)
+        str_path            = os.path.dirname(str_file)
+        self.str_json       = ''
+        self.str_dict       = ''
+        self.str_col        = ''
+        self.str_raw        = '' 
         if len(str_file):
-            self.dp.qprint("Analysing  in path: %s" % os.path.dirname(str_file))
+            self.dp.qprint("Analysing  in path: %s" % str_path)
             self.dp.qprint("Analysing tags for: %s" % str_localFile)            
             self.dcm       = dicom.read_file(str_file)
             self.d_dcm     = dict(self.dcm)
@@ -714,6 +853,7 @@ class pfdicomtag(object):
             'd_dicomSimple':    self.d_dicomSimple,
             'd_dicomJSON':      d_dicomJSON,
             'dcm':              self.dcm,
+            'str_path':         str_path,
             'str_outputFile':   str_outputFile,
             'str_inputFile':    str_localFile,
             'dstr_result':      {
@@ -734,6 +874,82 @@ class pfdicomtag(object):
             pylab.savefig(self.str_outputImageFile)
         except:
             pass
+
+    def outputSave(self, a_dict, **kwags):
+        """
+        Callback for saving outputs.
+        """
+        def html_make(str_inputFile, str_rawContent):
+            str_img     = ""
+            if self.b_convertToImg:
+                str_img = "<img src=%s>" % self.str_outputImageFile
+            htmlPage = '''
+                <!DOCTYPE html>
+                <html>
+                <head>
+                <title>DCM tags: %s</title>
+                </head>
+                <body>
+                %s
+                    <pre>
+                %s
+                    </pre>
+                </body>
+                </html> ''' % (str_inputFile, str_img, "\n" + str_rawContent)
+            return htmlPage
+
+        d_outputInfo    = a_dict
+        path            = d_outputInfo['str_path']
+        str_cwd         = os.getcwd()
+        self.mkdir(self.str_outputDir)
+        self.dp.qprint("Generating report for record: %s" % path)
+        os.chdir(self.str_outputDir)
+        self.mkdir(path)
+        os.chdir(path)
+        if self.b_printToScreen:
+            print(d_outputInfo['dstr_result']['raw'])
+        if self.b_convertToImg:
+            self.img_create(d_outputInfo['dcm'])
+        for str_outputFormat in self.l_outputFileType:
+            if str_outputFormat == 'json': 
+                str_fileName = d_outputInfo['str_outputFile']+'.json' 
+                with open(str_fileName, 'w') as f:
+                    f.write(d_outputInfo['dstr_result']['json'])
+                self.dp.qprint('Saved report file: %s' % str_fileName)
+            if str_outputFormat == 'dict': 
+                str_fileName = d_outputInfo['str_outputFile']+'-dict.txt' 
+                with open(str_fileName, 'w') as f:
+                    f.write(d_outputInfo['dstr_result']['dict'])
+                self.dp.qprint('Saved report file: %s' % str_fileName)
+            if str_outputFormat == 'col': 
+                str_fileName = d_outputInfo['str_outputFile']+'-col.txt' 
+                with open(str_fileName, 'w') as f:
+                    f.write(d_outputInfo['dstr_result']['col'])
+                self.dp.qprint('Saved report file: %s' % str_fileName)
+            if str_outputFormat == 'raw': 
+                str_fileName = d_outputInfo['str_outputFile']+'-raw.txt' 
+                with open(str_fileName, 'w') as f:
+                    f.write(d_outputInfo['dstr_result']['raw'])
+                self.dp.qprint('Saved report file: %s' % str_fileName)
+            if str_outputFormat == 'html': 
+                str_fileName = d_outputInfo['str_outputFile']+'.html' 
+                with open(str_fileName, 'w') as f:
+                    f.write(
+                        html_make(  d_outputInfo['str_inputFile'],
+                                    d_outputInfo['dstr_result']['raw'])
+                    )
+                self.dp.qprint('Saved report file: %s' % str_fileName)
+            if str_outputFormat == 'csv':
+                str_fileName = d_outputInfo['str_outputFile']+'-csv.txt' 
+                with open(str_fileName, 'w') as f:
+                    w = csv.DictWriter(f, d_outputInfo['d_dicomJSON'].keys())
+                    w.writeheader()
+                    w.writerow(d_outputInfo['d_dicomJSON'])
+                self.dp.qprint('Saved report file: %s' % str_fileName)
+        os.chdir(str_cwd)
+        return {
+            'status':   True
+        }
 
     def outputs_generate(self, **kwargs):
         """
@@ -825,6 +1041,29 @@ class pfdicomtag(object):
 
         os.chdir(self.str_inputDir)
         str_cwd         = os.getcwd()
+
+        pf_tree         = pftree(
+                            inputDir                = self.str_inputDir,
+                            inputFile               = self.str_inputFile,
+                            outputDir               = self.str_outputDir,
+                            verbosity               = self.verbosityLevel
+        )
+
+        d_probe         = pf_tree.tree_probe(       root    = ".")
+        d_construct     = pf_tree.tree_construct(   l_files = d_probe['l_files'])
+        d_inputAnalysis = pf_tree.tree_analysisApply(
+                            analysiscallback        = self.filelist_prune,
+                            applyResultsTo          = 'inputTree',
+                            applyKey                = 'l_file',
+                            persistAnalysisResults  = True
+        )
+        d_tagsExtract   = pf_tree.tree_analysisApply(
+                            analysiscallback        = self.tagsFindOnFile,
+                            outputcallback          = self.outputSave
+        )
+
+        pudb.set_trace()
+
         d_tree          = self.dirTree_create(root = ".")
         d_filtered      = self.dirTree_prune(filelist = d_tree['l_files'])
 
