@@ -255,7 +255,10 @@ if args.man or args.synopsis:
     print(str_help)
     sys.exit(1)
 
-pf_dicomtag       = pfdicomtag.pfdicomtag(
+pudb.set_trace()
+
+# pf_dicomtag       = pfdicomtag.pfdicomtag(
+pf_dicomtag       = pfdicomtag.pfdicom_tag(
                         inputDir            = args.inputDir,
                         inputFile           = args.inputFile,
                         extension           = args.extension,
@@ -271,7 +274,6 @@ pf_dicomtag       = pfdicomtag.pfdicomtag(
 
 # And now run it!
 pf_dicomtag.tic()
-pudb.set_trace()
 pf_dicomtag.run()
-if args.printElapsedTime: print("Elapsed time = %f seconds" % pf_dicomTag.toc())
+if args.printElapsedTime: pf_dicomtag.dp.qprint("Elapsed time = %f seconds" % pf_dicomtag.toc())
 sys.exit(0)
